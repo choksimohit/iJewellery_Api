@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import List
 from pydantic import BaseModel
 
 
@@ -16,10 +17,40 @@ class InsertLoanRequest(BaseModel):
     loan_amount: float
     loan_source_id: int
     created_by: str
+    melting: float = 0.0
 
 
 class UpdateLoanRequest(InsertLoanRequest):
     is_closure: int
+
+
+class UpdateLoanHeaderRequest(BaseModel):
+    loan_number: str
+    loan_date: datetime
+    loan_amount: float
+    updated_by: str
+
+
+class LoanItemRequest(BaseModel):
+    metal_type: str
+    metal_price: float
+    item_type_id: int
+    item_weight: float
+    item_description: str
+    melting: float = 0.0
+
+
+class InsertLoanMultiRequest(BaseModel):
+    loan_number: str
+    loan_date: datetime
+    name: str
+    address: str
+    phone: str
+    loan_amount: float
+    loan_source_id: int
+    created_by: str
+    customer_id: int
+    items: List[LoanItemRequest]
 
 
 class UpdateLoanClosureRequest(BaseModel):

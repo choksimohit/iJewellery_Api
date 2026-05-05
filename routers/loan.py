@@ -7,8 +7,10 @@ from datetime import datetime
 import database as db
 from auth import get_business_id, get_current_user
 from models.loan import (
+    InsertLoanMultiRequest,
     InsertLoanRequest,
     UpdateLoanClosureRequest,
+    UpdateLoanHeaderRequest,
     UpdateLoanRequest,
     UpdateLoanSourceRequest,
     UpdatePartLoanRequest,
@@ -59,6 +61,7 @@ async def insert_loan(body: InsertLoanRequest, request: Request,
         body.loan_number, body.loan_date, body.name, body.address, body.phone,
         body.metal_type, body.metal_price, body.item_type_id, body.item_weight,
         body.item_description, body.loan_amount, body.loan_source_id, body.created_by,
+        body.melting,
     )
 
 
@@ -226,3 +229,42 @@ async def get_months_between(FromDate: datetime, ToDate: datetime, request: Requ
         {"FromDate": str(FromDate), "ToDate": str(ToDate)},
         db.get_months_between, business_id, FromDate, ToDate,
     )
+
+
+@router.post("/updateLoanHeader")
+async def update_loan_header(body: UpdateLoanHeaderRequest, request: Request,
+                             business_id: int = Depends(get_business_id)):
+    return await _run(
+        business_id, request, "updateLoanHeader", "POST", body.model_dump(),
+        db.update_loan_header, business_id,
+        body.loan_number, body.loan_date, body.loan_amount, body.updated_by,
+    )
+
+
+@router.post("/insertLoanMulti")
+async def insert_loan_multi(body: InsertLoanMultiRequest, request: Request,
+                            business_id: int = Depends(get_business_id)):
+    try:
+        conn = db.get_connection(business_id)
+        conn.autocommit = False
+        try:
+            db.insert_loan_multi(
+                conn, body.loan_number, body.loan_date, body.name, body.address,
+                body.phone, body.loan_amount, body.loan_source_id,
+                body.created_by, body.customer_id,
+            )
+            for item in body.items:
+                db.insert_loan_item_multi(
+                    conn, body.loan_number, item.metal_type, item.metal_price,
+                    item.item_type_id, item.item_weight, item.item_description,
+                    item.melting, body.created_by,
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+        return {"status": "ok", "loan_number": body.loan_number}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

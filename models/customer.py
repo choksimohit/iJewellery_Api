@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Optional
 from pydantic import BaseModel
 
 
@@ -22,3 +23,27 @@ class InsertCustomerLedgerRequest(BaseModel):
     invoice_no: str
     description: str
     created_by: str
+
+
+class InsertCustomerRequest(BaseModel):
+    name: str
+    address: Optional[str] = None
+    created_by: str
+
+
+class UpdateCustomerRequest(BaseModel):
+    customer_id: int
+    name: str
+    address: Optional[str] = None
+
+
+class InsertCustomerPhoneRequest(BaseModel):
+    customer_id: int
+    phone: str
+    is_primary: bool
+    created_by: str
+
+
+class MergeCustomersRequest(BaseModel):
+    master_id: int
+    duplicate_ids: str

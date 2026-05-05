@@ -1,12 +1,13 @@
 import json
 import time
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 import database as db
-from auth import get_business_id_optional
+from auth import get_business_id_optional, get_current_user
 
-router = APIRouter(prefix="/api/masterData", tags=["Master Data"])
+router = APIRouter(prefix="/api/masterData", tags=["Master Data"],
+                   dependencies=[Depends(get_current_user)])
 
 
 async def _run(business_id: int, request: Request, url: str, fn, *args):

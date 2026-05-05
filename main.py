@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import auth, customer, loan, master, reports
+from routers import admin, auth, borrowed_loans, customer, khatabook, loan, master, reports
 
 app = FastAPI(
     title="iJewellery API",
@@ -22,6 +22,9 @@ app.include_router(loan.router)
 app.include_router(customer.router)
 app.include_router(master.router)
 app.include_router(reports.router)
+app.include_router(borrowed_loans.router)
+app.include_router(khatabook.router)
+app.include_router(admin.router)
 
 
 @app.get("/", tags=["Health"])

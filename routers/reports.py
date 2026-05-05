@@ -1,12 +1,13 @@
 import json
 import time
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 import database as db
-from auth import get_business_id_optional
+from auth import get_business_id_optional, get_current_user
 
-router = APIRouter(prefix="/api/reports", tags=["Reports"])
+router = APIRouter(prefix="/api/reports", tags=["Reports"],
+                   dependencies=[Depends(get_current_user)])
 
 
 async def _run(business_id: int, request: Request, url: str, req_body: dict, fn, *args):
@@ -63,3 +64,10 @@ async def get_loan_source_wise_total(request: Request):
     business_id = get_business_id_optional(request)
     return await _run(business_id, request, "getLoanSourceWiseAmountTotal", {},
                       db.get_loan_source_wise_total, business_id)
+
+
+@router.get("/getInterestDashboardData")
+async def get_interest_dashboard_data(request: Request):
+    business_id = get_business_id_optional(request)
+    return await _run(business_id, request, "getInterestDashboardData", {},
+                      db.get_interest_dashboard_data, business_id)
