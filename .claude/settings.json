@@ -2,6 +2,9 @@
   "permissions": {
     "allow": [
       "PowerShell(python --version)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\lenovo\\source\\repos\\iJewellery_Flutter"
     ]
   }
 }
