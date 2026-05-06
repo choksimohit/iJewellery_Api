@@ -1,39 +1,36 @@
 import hashlib
-import time
 from datetime import datetime
 from typing import Any
 
-import pyodbc
+import pymssql
 
 from config import settings
 
 
-def _get_connection(business_id: int) -> pyodbc.Connection:
+def _get_connection(business_id: int) -> Any:
     db_name = settings.business_databases.get(business_id)
     if not db_name:
         raise Exception(f"No database configured for BusinessId {business_id}")
-    conn_str = (
-        f"DRIVER={{ODBC Driver 17 for SQL Server}};"
-        f"SERVER={settings.server_name};"
-        f"DATABASE={db_name};"
-        f"UID={settings.db_username};"
-        f"PWD={settings.db_password};"
-        f"TrustServerCertificate=yes;"
+    return pymssql.connect(
+        server=settings.server_name,
+        user=settings.db_username,
+        password=settings.db_password,
+        database=db_name,
+        tds_version="7.4",
     )
-    return pyodbc.connect(conn_str)
 
 
-def _rows_to_list(cursor: pyodbc.Cursor) -> list[dict]:
+def _rows_to_list(cursor: Any) -> list[dict]:
     if cursor.description is None:
         return []
     columns = [col[0] for col in cursor.description]
     return [dict(zip(columns, row)) for row in cursor.fetchall()]
 
 
-def _call_sp(conn: pyodbc.Connection, sp_name: str, params: list = None) -> list[dict]:
+def _call_sp(conn: Any, sp_name: str, params: list = None) -> list[dict]:
     cursor = conn.cursor()
     if params:
-        placeholders = ",".join(["?" for _ in params])
+        placeholders = ",".join(["%s" for _ in params])
         cursor.execute(f"EXEC {sp_name} {placeholders}", params)
     else:
         cursor.execute(f"EXEC {sp_name}")
@@ -42,7 +39,7 @@ def _call_sp(conn: pyodbc.Connection, sp_name: str, params: list = None) -> list
 
 # ---------- Connection dependency ----------
 
-def get_connection(business_id: int) -> pyodbc.Connection:
+def get_connection(business_id: int) -> Any:
     return _get_connection(business_id)
 
 
@@ -58,8 +55,8 @@ def validate_user(business_id: int, username: str, password: str) -> bool:
     try:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT COUNT(1) FROM mchoksi.Users WHERE UserName=? AND PasswordHash=?",
-            username, hashed,
+            "SELECT COUNT(1) FROM mchoksi.Users WHERE UserName=%s AND PasswordHash=%s",
+            (username, hashed),
         )
         return cursor.fetchone()[0] > 0
     finally:
@@ -92,8 +89,8 @@ def insert_user_authorization(business_id: int, user_id: int, page_name: str, ca
         cursor = conn.cursor()
         cursor.execute(
             "INSERT INTO mchoksi.UserAuthorization (UserID, PageName, CanAccess, CreatedWhen)"
-            " VALUES (?, ?, ?, GETDATE())",
-            user_id, page_name, can_access,
+            " VALUES (%s, %s, %s, GETDATE())",
+            (user_id, page_name, can_access),
         )
         conn.commit()
     finally:
@@ -105,8 +102,8 @@ def update_user_authorization(business_id: int, id: int, user_id: int, page_name
     try:
         cursor = conn.cursor()
         cursor.execute(
-            "UPDATE mchoksi.UserAuthorization SET UserID=?, PageName=?, CanAccess=? WHERE ID=?",
-            user_id, page_name, can_access, id,
+            "UPDATE mchoksi.UserAuthorization SET UserID=%s, PageName=%s, CanAccess=%s WHERE ID=%s",
+            (user_id, page_name, can_access, id),
         )
         conn.commit()
     finally:
@@ -117,7 +114,7 @@ def delete_user_authorization(business_id: int, id: int) -> None:
     conn = _get_connection(business_id)
     try:
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM mchoksi.UserAuthorization WHERE ID=?", id)
+        cursor.execute("DELETE FROM mchoksi.UserAuthorization WHERE ID=%s", (id,))
         conn.commit()
     finally:
         conn.close()
@@ -144,9 +141,9 @@ def insert_menu_page(business_id: int, page_url: str, display_name: str, sort_or
         cursor.execute(
             "INSERT INTO mchoksi.MenuPages"
             " (PageURL, PageDisplayName, SortOrder, IsActive, Category, CategoryIcon, PageIcon, CategoryOrder, AppVersion)"
-            " VALUES (?,?,?,?,?,?,?,?,?)",
-            page_url, display_name, sort_order, is_active,
-            category, category_icon, page_icon, category_order, app_version,
+            " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            (page_url, display_name, sort_order, is_active,
+             category, category_icon, page_icon, category_order, app_version),
         )
         conn.commit()
     finally:
@@ -161,11 +158,11 @@ def update_menu_page(business_id: int, menu_id: int, page_url: str, display_name
         cursor = conn.cursor()
         cursor.execute(
             "UPDATE mchoksi.MenuPages"
-            " SET PageURL=?, PageDisplayName=?, SortOrder=?, IsActive=?,"
-            "     Category=?, CategoryIcon=?, PageIcon=?, CategoryOrder=?, AppVersion=?"
-            " WHERE MenuID=?",
-            page_url, display_name, sort_order, is_active,
-            category, category_icon, page_icon, category_order, app_version, menu_id,
+            " SET PageURL=%s, PageDisplayName=%s, SortOrder=%s, IsActive=%s,"
+            "     Category=%s, CategoryIcon=%s, PageIcon=%s, CategoryOrder=%s, AppVersion=%s"
+            " WHERE MenuID=%s",
+            (page_url, display_name, sort_order, is_active,
+             category, category_icon, page_icon, category_order, app_version, menu_id),
         )
         conn.commit()
     finally:
@@ -176,7 +173,7 @@ def delete_menu_page(business_id: int, menu_id: int) -> None:
     conn = _get_connection(business_id)
     try:
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM mchoksi.MenuPages WHERE MenuID=?", menu_id)
+        cursor.execute("DELETE FROM mchoksi.MenuPages WHERE MenuID=%s", (menu_id,))
         conn.commit()
     finally:
         conn.close()
@@ -276,9 +273,9 @@ def get_months_between(business_id: int, from_date: datetime, to_date: datetime)
     try:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT dbo.[iJewellery_Get_Months_BetWeen](?,?)",
-            from_date.strftime("%Y-%m-%d %H:%M:%S"),
-            to_date.strftime("%Y-%m-%d %H:%M:%S"),
+            "SELECT dbo.[iJewellery_Get_Months_BetWeen](%s,%s)",
+            (from_date.strftime("%Y-%m-%d %H:%M:%S"),
+             to_date.strftime("%Y-%m-%d %H:%M:%S")),
         )
         return int(cursor.fetchone()[0])
     finally:
@@ -295,8 +292,8 @@ def get_loan_by_name_search(business_id: int, name: str) -> list[dict]:
             "Convert(nvarchar, mchoksi.fnNumberToWordsG(LoanAmount))+N' પુરા' LoanAmountInWords,"
             "[SourceName],CONVERT(VARCHAR,ClosureDate) ClosureDate,[ClosureAmount],[ClosureMonths],"
             "[IsClosure],[LoanSourceID],ItemDescription "
-            "FROM mchoksi.Loans WHERE Name Like N'%'+?+'%' ORDER BY LoanNumber DESC",
-            name,
+            "FROM mchoksi.Loans WHERE Name Like N'%%'+%s+'%%' ORDER BY LoanNumber DESC",
+            (name,),
         )
         return _rows_to_list(cursor)
     finally:
@@ -310,8 +307,8 @@ def get_loan_by_amount_greater_than(business_id: int, amount: float, loan_source
         cursor.execute(
             "SELECT [LoanNumber],[LoanDate],[Name],[Address],[Phone],[MetalType],[ItemName],[MetalWeight],"
             "[LoanAmount],[SourceName],[ClosureAmount],[ClosureMonths] LoanTenure,[IsClosure],[LoanSourceID],ItemDescription "
-            "FROM mchoksi.Loans WHERE IsClosure=0 AND LoanAmount>=? AND LoanSourceID=? ORDER BY LoanAmount DESC",
-            amount, loan_source_id,
+            "FROM mchoksi.Loans WHERE IsClosure=0 AND LoanAmount>=%s AND LoanSourceID=%s ORDER BY LoanAmount DESC",
+            (amount, loan_source_id),
         )
         return _rows_to_list(cursor)
     finally:
@@ -359,31 +356,31 @@ def update_loan_header(business_id: int, loan_number: str, loan_date: datetime,
         conn.close()
 
 
-def insert_loan_multi(conn: pyodbc.Connection, loan_number: str, loan_date: datetime,
+def insert_loan_multi(conn: Any, loan_number: str, loan_date: datetime,
                       name: str, address: str, phone: str, loan_amount: float,
                       loan_source_id: int, created_by: str, customer_id: int) -> None:
     cursor = conn.cursor()
     cursor.execute(
-        f"EXEC iJewellery_Insert_Loan_Multi ?,?,?,?,?,?,?,?,?",
-        loan_number, loan_date, name, address, phone,
-        loan_amount, loan_source_id, created_by, customer_id,
+        "EXEC iJewellery_Insert_Loan_Multi %s,%s,%s,%s,%s,%s,%s,%s,%s",
+        (loan_number, loan_date, name, address, phone,
+         loan_amount, loan_source_id, created_by, customer_id),
     )
 
 
-def insert_loan_item_multi(conn: pyodbc.Connection, loan_number: str, metal_type: str,
+def insert_loan_item_multi(conn: Any, loan_number: str, metal_type: str,
                            metal_price: float, item_type_id: int, item_weight: float,
                            item_description: str, melting: float, created_by: str) -> None:
     cursor = conn.cursor()
     cursor.execute(
-        f"EXEC iJewellery_Insert_Loan_Item_Multi ?,?,?,?,?,?,?,?",
-        loan_number, metal_type, metal_price, item_type_id,
-        item_weight, item_description, created_by, melting,
+        "EXEC iJewellery_Insert_Loan_Item_Multi %s,%s,%s,%s,%s,%s,%s,%s",
+        (loan_number, metal_type, metal_price, item_type_id,
+         item_weight, item_description, created_by, melting),
     )
 
 
-def delete_loan_items(conn: pyodbc.Connection, loan_number: str) -> None:
+def delete_loan_items(conn: Any, loan_number: str) -> None:
     cursor = conn.cursor()
-    cursor.execute("EXEC iJewellery_Delete_Loan_Items ?", loan_number)
+    cursor.execute("EXEC iJewellery_Delete_Loan_Items %s", (loan_number,))
 
 
 def delete_loan(business_id: int, loan_number: str, created_by: str) -> list[dict]:
@@ -563,9 +560,9 @@ def insert_customer(business_id: int, name: str, address: str, created_by: str) 
         cursor = conn.cursor()
         cursor.execute(
             "DECLARE @NewCustomerID BIGINT;"
-            " EXEC usp_InsertCustomer @Name=?, @Address=?, @CreatedBy=?, @NewCustomerID=@NewCustomerID OUTPUT;"
+            " EXEC usp_InsertCustomer @Name=%s, @Address=%s, @CreatedBy=%s, @NewCustomerID=@NewCustomerID OUTPUT;"
             " SELECT @NewCustomerID",
-            name, address, created_by,
+            (name, address, created_by),
         )
         row = cursor.fetchone()
         return int(row[0]) if row and row[0] is not None else 0
@@ -604,9 +601,9 @@ def insert_customer_phone(business_id: int, customer_id: int, phone: str,
         cursor = conn.cursor()
         cursor.execute(
             "DECLARE @NewPhoneID BIGINT;"
-            " EXEC usp_InsertCustomerPhone @CustomerID=?, @PhoneNumber=?, @IsPrimary=?, @CreatedBy=?, @NewPhoneID=@NewPhoneID OUTPUT;"
+            " EXEC usp_InsertCustomerPhone @CustomerID=%s, @PhoneNumber=%s, @IsPrimary=%s, @CreatedBy=%s, @NewPhoneID=@NewPhoneID OUTPUT;"
             " SELECT @NewPhoneID",
-            customer_id, phone, is_primary, created_by,
+            (customer_id, phone, is_primary, created_by),
         )
         row = cursor.fetchone()
         return int(row[0]) if row and row[0] is not None else 0
@@ -727,16 +724,16 @@ def update_entity_photo(business_id: int, entity_type: str, entity_id: int,
         cursor = conn.cursor()
         cursor.execute(
             "MERGE mchoksi.m_EntityPhoto AS t"
-            " USING (SELECT ? AS EntityType, ? AS EntityID) AS s"
+            " USING (SELECT %s AS EntityType, %s AS EntityID) AS s"
             "    ON t.EntityType = s.EntityType AND t.EntityID = s.EntityID"
             " WHEN MATCHED THEN"
-            "     UPDATE SET Photo=?, PhotoContentType=?, UpdatedAt=GETDATE(), UpdatedBy=?"
+            "     UPDATE SET Photo=%s, PhotoContentType=%s, UpdatedAt=GETDATE(), UpdatedBy=%s"
             " WHEN NOT MATCHED THEN"
             "     INSERT (EntityType, EntityID, Photo, PhotoContentType, UpdatedAt, UpdatedBy)"
-            "     VALUES (?, ?, ?, ?, GETDATE(), ?);",
-            entity_type, entity_id,
-            photo, content_type, updated_by,
-            entity_type, entity_id, photo, content_type, updated_by,
+            "     VALUES (%s, %s, %s, %s, GETDATE(), %s);",
+            (entity_type, entity_id,
+             photo, content_type, updated_by,
+             entity_type, entity_id, photo, content_type, updated_by),
         )
         conn.commit()
     finally:
@@ -749,8 +746,8 @@ def get_entity_photo(business_id: int, entity_type: str, entity_id: int) -> tupl
         cursor = conn.cursor()
         cursor.execute(
             "SELECT Photo, PhotoContentType FROM mchoksi.m_EntityPhoto"
-            " WHERE EntityType=? AND EntityID=?",
-            entity_type, entity_id,
+            " WHERE EntityType=%s AND EntityID=%s",
+            (entity_type, entity_id),
         )
         row = cursor.fetchone()
         if row and row[0] is not None:
@@ -811,8 +808,8 @@ def update_metal_rates(business_id: int, gold_rate: float, silver_rate: float, c
         cursor = conn.cursor()
         cursor.execute(
             "INSERT INTO mchoksi.MetalRates (RateDate, GoldRate, SilverRate, CreatedAt, CreatedBy)"
-            " VALUES (GETDATE(), ?, ?, GETDATE(), ?)",
-            gold_rate, silver_rate, created_by,
+            " VALUES (GETDATE(), %s, %s, GETDATE(), %s)",
+            (gold_rate, silver_rate, created_by),
         )
         conn.commit()
         return cursor.rowcount > 0
@@ -914,10 +911,10 @@ async def log_api_call(business_id: int, method: str, url: str, request_body: st
         conn = _get_connection(business_id)
         cursor = conn.cursor()
         cursor.execute(
-            "{CALL usp_LogApiCall(?,?,?,?,?,?,?,?,?)}",
-            method, url, request_body or "", response_body or "",
-            status_code, execution_time_ms, user_agent or "",
-            client_ip or "", exception,
+            "EXEC usp_LogApiCall %s,%s,%s,%s,%s,%s,%s,%s,%s",
+            (method, url, request_body or "", response_body or "",
+             status_code, execution_time_ms, user_agent or "",
+             client_ip or "", exception),
         )
         conn.commit()
         conn.close()
